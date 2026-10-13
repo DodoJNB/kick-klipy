@@ -3,7 +3,7 @@
 //
 // Jeśli Kick (Cloudflare) blokuje IP Netlify (403), ustaw w Netlify zmienną
 // środowiskową KICK_PROXY_URL na adres własnego proxy (np. Cloudflare Worker),
-// który przyjmie ten sam ciąg zapytania "?url=<zakodowany adres>".
+// który przyjmie zapytanie "?url=<zakodowany adres>".
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -48,9 +48,11 @@ exports.handler = async (event) => {
 
     if (res.status === 404) return json(404, { error: "Nie znaleziono kanału." });
     if (res.status === 403 || res.status === 429) {
+      const snippet = (await res.text().catch(() => "")).slice(0, 120).replace(/\s+/g, " ");
       return json(502, {
         error:
-          "Kick zablokował zapytanie z serwera (Cloudflare). Ustaw KICK_PROXY_URL – patrz README.",
+          `Blokada (${res.status}). Proxy: ${proxy ? "TAK" : "NIE (brak KICK_PROXY_URL)"}. ` +
+          `Odpowiedź: ${snippet}`,
       });
     }
     if (!res.ok) return json(502, { error: `Kick zwrócił błąd ${res.status}.` });
