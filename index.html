@@ -83,6 +83,7 @@
 </div>
 
 <script>
+const PROXY = "https://kick-proxy.xdodo-jnb.workers.dev";
 const $ = (id) => document.getElementById(id);
 const out = $("out"), moreBtn = $("more");
 let sort = "date", cursor = null, busy = false;
@@ -156,11 +157,25 @@ async function load(reset) {
     history.replaceState(null, "", u);
   }
   try {
-    const p = new URLSearchParams({ channel, sort, time: $("time").value });
+    const p = new URLSearchParams({ sort, time: $("time").value });
     if (cursor) p.set("cursor", cursor);
-    const res = await fetch("/api/clips?" + p);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Błąd " + res.status);
+    const kickUrl = `https://kick.com/api/v2/channels/${encodeURIComponent(channel.toLowerCase())}/clips?${p}`;
+    const res = await fetch(`${PROXY}?url=${encodeURIComponent(kickUrl)}`);
+    if (res.status === 404) throw new Error("Nie znaleziono kanału.");
+    if (!res.ok) throw new Error("Kick zwrócił błąd " + res.status + ".");
+    const raw = await res.json();
+    const data = {
+      nextCursor: raw.nextCursor || null,
+      clips: (raw.clips || raw.data || []).map((c) => ({
+        title: c.title || "(bez tytułu)",
+        thumbnail: c.thumbnail_url || null,
+        duration: c.duration || 0,
+        views: c.view_count ?? c.views ?? 0,
+        createdAt: c.created_at || null,
+        category: (c.category && c.category.name) || "",
+        url: `https://kick.com/${(c.channel && c.channel.slug) || channel.toLowerCase()}/clips/${c.id}`,
+      })),
+    };
 
     if (reset) out.innerHTML = '<div class="grid" id="grid"></div>';
     if (!data.clips.length && reset) {
