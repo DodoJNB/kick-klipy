@@ -1,0 +1,49 @@
+name: Zrób short z klipu
+
+on:
+  workflow_dispatch:
+    inputs:
+      clip:
+        description: "Link do klipu na Kicku (https://kick.com/kanal/clips/clip_...)"
+        required: true
+      caption:
+        description: "Napis w czerwonym pasku (np. MGŁA NA NUKE)"
+        required: false
+        default: ""
+      watermark:
+        description: "Mały napis w rogu (np. @Dodo)"
+        required: false
+        default: ""
+      cam:
+        description: "Gdzie jest kamerka w klipie: x,y,w,h jako ułamki 0-1"
+        required: false
+        default: "0,0,0.26,0.33"
+
+jobs:
+  short:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalacja ffmpeg i Pillow
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          pip install pillow
+
+      - name: Montaż
+        env:
+          KICK_PROXY: https://kick-proxy.xdodo-jnb.workers.dev
+          CLIP: ${{ inputs.clip }}
+          CAPTION: ${{ inputs.caption }}
+          WATERMARK: ${{ inputs.watermark }}
+          CAM: ${{ inputs.cam }}
+        run: |
+          python3 shorts/short.py --clip "$CLIP" --caption "$CAPTION" \
+            --watermark "$WATERMARK" --cam "$CAM" --out short.mp4
+
+      - name: Wynik do pobrania
+        uses: actions/upload-artifact@v4
+        with:
+          name: short
+          path: short.mp4
