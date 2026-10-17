@@ -334,8 +334,13 @@ def transcribe(source, pre, tmp, lang="pl", model_name="small"):
         sys.exit("Brak biblioteki faster-whisper (pip install faster-whisper).")
     wav = os.path.join(tmp, "audio.wav")
     extract_wav(source, pre, wav)
+    # dźwięk wczytujemy sami (omija błąd modułu 'av' w faster-whisper)
+    import wave
+    import numpy as np
+    with wave.open(wav, "rb") as wf:
+        audio = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
-    segs, info = model.transcribe(wav, language=lang or None, word_timestamps=True,
+    segs, info = model.transcribe(audio, language=lang or None, word_timestamps=True,
                                   vad_filter=True, beam_size=1)
     words, phrases = [], []
     for sg in segs:
@@ -370,7 +375,7 @@ def ass_time(t):
     return f"{cs // 360000}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
 
 
-def write_ass(path, words, font_name="DejaVu Sans", y_bottom=1450, size=76):
+def write_ass(path, words, font_name="DejaVu Sans", y_bottom=H // 2, size=76):
     """Napisy w stylu TikToka: 2-3 słowa naraz, aktualnie mówione słowo na żółto."""
     groups, cur = [], []
     for w in words:
@@ -387,9 +392,9 @@ def write_ass(path, words, font_name="DejaVu Sans", y_bottom=1450, size=76):
         "[V4+ Styles]\n"
         "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,"
         "Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
-        "Style: Default,%s,%d,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,2,60,60,%d,1\n\n"
+        "Style: Default,%s,%d,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,5,60,60,%d,1\n\n"
         "[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
-    ) % (W, H, font_name, size, H - y_bottom)
+    ) % (W, H, font_name, size, 0)
     lines = []
     for g in groups:
         for i, (st, en, _) in enumerate(g):
