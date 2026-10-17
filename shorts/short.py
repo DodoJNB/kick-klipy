@@ -30,7 +30,7 @@ W, H = 1080, 1920
 CAM_H = 773                 # wysokość sekcji z kamerką
 GAME_Y, GAME_H = 773, 792   # sekcja z grą: y 773..1565
 BOX_X0, BOX_X1 = 54, 1025   # maks. szerokość czerwonego paska
-NOCAM_Y, NOCAM_H = 250, 1315  # bez kamerki: gra w pasie y 250..1565, nad i pod rozmyte tło
+NOCAM_Y, NOCAM_H = 380, 1080  # bez kamerki: domyślny pas z grą (góra, wysokość); nad i pod rozmyte tło
 BOX_CY_NOCAM = 360          # pasek w trybie bez kamerki (wyżej)
 BOX_CY = 740                # środek paska (lekko nad stykiem kamery i gry)
 LOGO_CX, LOGO_CY = 565, 1565  # środek logo: na dolnej krawędzi gry
@@ -488,8 +488,9 @@ def fit_text(draw, text, font_path, max_w):
     return ImageFont.truetype(font_path, 40), [text[:50]]
 
 
-def render_overlay(path, caption, font_path, logo_path, cap_cy=None):
+def render_overlay(path, caption, font_path, logo_path, cap_cy=None, logo_cy=None):
     cap_cy = BOX_CY if cap_cy is None else cap_cy
+    logo_cy = LOGO_CY if logo_cy is None else logo_cy
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
 
@@ -519,7 +520,7 @@ def render_overlay(path, caption, font_path, logo_path, cap_cy=None):
         import base64, io
         logo = Image.open(io.BytesIO(base64.b64decode(EMBEDDED_LOGO))).convert("RGBA")
     if logo is not None:
-        img.alpha_composite(logo, (LOGO_CX - logo.width // 2, LOGO_CY - logo.height // 2))
+        img.alpha_composite(logo, (LOGO_CX - logo.width // 2, int(logo_cy) - logo.height // 2))
 
     img.save(path)
 
@@ -533,6 +534,7 @@ def main():
     ap.add_argument("--logo", default=os.path.join(HERE, "logo.png"),
                     help="obrazek na dolnej krawędzi gry (PNG z przezroczystością); '' = bez logo")
     ap.add_argument("--no-logo", action="store_true", help="bez logo TSXNINE")
+    ap.add_argument("--band", default=f"{NOCAM_Y},{NOCAM_H}", help="bez kamerki: góra,wysokość pasa z grą (px na 1080x1920)")
     ap.add_argument("--no-cam", action="store_true", help="bez kamerki: gra na cały ekran")
     ap.add_argument("--captions", action="store_true", help="napisy słowo po słowie (Whisper)")
     ap.add_argument("--lang", default="pl", help="język mowy do napisów (pl, en, '' = automatycznie)")
@@ -550,6 +552,13 @@ def main():
     ap.add_argument("--max-seconds", type=int, default=180, help="maks. długość filmu (0 = 180)")
     a = ap.parse_args()
 
+    try:
+        band_y, band_h = [int(float(v)) for v in a.band.split(",")]
+    except ValueError:
+        band_y, band_h = NOCAM_Y, NOCAM_H
+    band_h = max(300, min(band_h, H))
+    band_y = max(0, min(band_y, H - band_h))
+
     source = resolve_clip(a.clip, a.proxy) if a.clip else a.input
     print("Źródło:", source)
 
@@ -563,7 +572,7 @@ def main():
         gx, gy, gw, gh = [float(v) for v in a.game.split(",")]
     else:  # pełna wysokość, środek klatki, proporcje sekcji gry
         gh, gy = 1.0, 0.0
-        gw = min(((W / NOCAM_H) if a.no_cam else (W / GAME_H)) * sh / sw, 1.0)
+        gw = min(((W / band_h) if a.no_cam else (W / GAME_H)) * sh / sw, 1.0)
         gx = (1 - gw) / 2
 
     tmp = tempfile.mkdtemp()
@@ -582,7 +591,8 @@ def main():
 
     overlay = os.path.join(tmp, "overlay.png")
     render_overlay(overlay, a.caption, find_font(a.font), "" if a.no_logo else a.logo,
-                   BOX_CY_NOCAM if a.no_cam else BOX_CY)
+                   band_y if a.no_cam else BOX_CY,                      # pasek dokładnie na styku rozmycia i obrazu
+                   band_y + band_h if a.no_cam else LOGO_CY)  # logo na dolnej krawędzi obrazu
 
     limit = a.max_seconds if a.max_seconds and a.max_seconds > 0 else 180
     dur, has_audio = media_info(source, pre)
@@ -636,8 +646,8 @@ def main():
             "[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
             f"gblur=sigma=9,scale={W}:{H}:flags=bicubic,setsar=1[bg];"
             f"[c]crop=trunc(iw*{gw}):trunc(ih*{gh}):trunc(iw*{gx}):trunc(ih*{gy}),"
-            f"scale={W}:{NOCAM_H},setsar=1[game];"
-            f"[bg][game]overlay=0:{NOCAM_Y}[t2];"
+            f"scale={W}:{band_h},setsar=1[game];"
+            f"[bg][game]overlay=0:{band_y}[t2];"
             f"[t2][1:v]overlay=0:0:shortest=1{subs},format=yuv420p[v]"
         )
     else:
