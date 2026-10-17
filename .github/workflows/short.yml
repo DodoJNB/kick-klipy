@@ -29,6 +29,10 @@ on:
         description: "Liczby po przecinku: głośność,start,koniec,maks.długość,góra pasa,wysokość pasa"
         required: false
         default: "1,0,0,0,380,1080"
+      keep:
+        description: "Ręcznie wybrane fragmenty do zostawienia (od-do w sekundach, po przecinku)"
+        required: false
+        default: ""
       job:
         description: "Numer zadania (wypełnia strona, ręcznie zostaw puste)"
         required: false
@@ -66,6 +70,7 @@ jobs:
           GAME: ${{ inputs.game }}
           OPTS: ${{ inputs.opts }}
           NUMS: ${{ inputs.nums }}
+          KEEP: ${{ inputs.keep }}
         run: |
           EXTRA=""
           case ",$OPTS," in *,nologo,*)   EXTRA="$EXTRA --no-logo" ;; esac
@@ -76,7 +81,7 @@ jobs:
           python3 shorts/short.py --clip "$CLIP" --caption "$CAPTION" \
             --cam "$CAM" --game "$GAME" $EXTRA \
             --volume "${VOLUME:-1}" --start "${START:-0}" --end "${END:-0}" \
-            --max-seconds "${MAXLEN:-0}" --band "${BANDY:-380},${BANDH:-1080}" --out short.mp4
+            --max-seconds "${MAXLEN:-0}" --band "${BANDY:-380},${BANDH:-1080}" --keep "$KEEP" --out short.mp4
 
       - name: Wynik do pobrania (zakładka Artifacts)
         uses: actions/upload-artifact@v4
