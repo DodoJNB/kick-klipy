@@ -32,7 +32,7 @@ GAME_Y, GAME_H = 773, 792   # sekcja z grą: y 773..1565
 BOX_X0, BOX_X1 = 54, 1025   # maks. szerokość czerwonego paska
 NOCAM_Y, NOCAM_H = 380, 1080  # bez kamerki: domyślny pas z grą (góra, wysokość); nad i pod rozmyte tło
 BOX_CY_NOCAM = 360          # pasek w trybie bez kamerki (wyżej)
-BOX_CY = 740                # środek paska (lekko nad stykiem kamery i gry)
+BOX_CY = 773                # środek paska dokładnie na styku kamery i gry
 LOGO_CX, LOGO_CY = 565, 1565  # środek logo: na dolnej krawędzi gry
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -440,23 +440,43 @@ def suggest_captions(phrases, words):
     return out
 
 
-def plan_segments(dur, start, end, silence):
-    """Lista (od, do) fragmentów źródła do zostawienia (po przycięciu i ewentualnym wycięciu ciszy)."""
-    lo = max(0.0, start)
-    hi = min(dur, end) if end and end > 0 else dur
-    if hi <= lo:
-        sys.exit("Koniec fragmentu jest przed początkiem.")
-    base = [(lo, hi)]
+def plan_segments(dur, start, end, silence, keep=None):
+    """Lista (od, do) fragmentów źródła do zostawienia: ręczne wycinki (keep) albo przycięcie start/koniec,
+    a do tego (opcjonalnie) wycięcie ciszy."""
+    if keep:
+        base = [(max(0.0, a), min(dur, b) if dur else b) for a, b in keep if b > a]
+        base = [x for x in base if x[1] - x[0] > 0.05]
+        if not base:
+            sys.exit("Wszystkie fragmenty zostały wycięte.")
+    else:
+        lo = max(0.0, start)
+        hi = min(dur, end) if end and end > 0 else dur
+        if hi <= lo:
+            sys.exit("Koniec fragmentu jest przed początkiem.")
+        base = [(lo, hi)]
     if silence:
         out = []
-        for a, b in silence:
-            a2, b2 = max(a, lo), min(b, hi)
-            if b2 - a2 > 0.1:
-                out.append((a2, b2))
+        for a, b in base:
+            for sa, sb in silence:
+                a2, b2 = max(a, sa), min(b, sb)
+                if b2 - a2 > 0.1:
+                    out.append((a2, b2))
         base = out or base
     if base == [(0.0, dur)]:
         return None
     return base
+
+
+def parse_keep(text):
+    out = []
+    for part in (text or "").split(","):
+        if "-" in part:
+            a, b = part.split("-", 1)
+            try:
+                out.append((float(a), float(b)))
+            except ValueError:
+                pass
+    return sorted(out)
 
 
 def tlen(draw, text, font):
@@ -539,6 +559,7 @@ def main():
     ap.add_argument("--captions", action="store_true", help="napisy słowo po słowie (Whisper)")
     ap.add_argument("--lang", default="pl", help="język mowy do napisów (pl, en, '' = automatycznie)")
     ap.add_argument("--volume", type=float, default=1.0, help="głośność dźwięku (1 = bez zmian)")
+    ap.add_argument("--keep", default="", help="ręcznie wybrane fragmenty do zostawienia, np. 0-3.5,6-10")
     ap.add_argument("--start", type=float, default=0.0, help="początek fragmentu (s)")
     ap.add_argument("--end", type=float, default=0.0, help="koniec fragmentu (s), 0 = do końca")
     ap.add_argument("--words-json", default="", help="gotowe słowa zamiast Whisper (do testów)")
@@ -605,7 +626,7 @@ def main():
                 print("Cisza: nic do wycięcia.")
         else:
             print("Cisza: brak dźwięku, pomijam.")
-    segs = plan_segments(dur, a.start, a.end, silence) if dur > 0 else None
+    segs = plan_segments(dur, a.start, a.end, silence, parse_keep(a.keep)) if (dur > 0 or a.keep) else None
 
     words = []
     if a.captions:
