@@ -291,11 +291,11 @@ function draw() {
   // przykład napisów słowo po słowie (tylko pokazuje położenie)
   if ($("captions").checked) {
     ctx.font = 'bold 76px "DejaVu Sans", Verdana, Arial, sans-serif';
-    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round"; ctx.lineWidth = 14; ctx.strokeStyle = "#000";
+    ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.lineJoin = "round"; ctx.lineWidth = 14; ctx.strokeStyle = "#000";
     const parts = ["TO", "JEST", "PRZYKŁAD"], gap = 22;
     const ws = parts.map((t) => ctx.measureText(t).width), total = ws.reduce((a, b) => a + b, 0) + gap * 2;
     let x = (W - total) / 2;
-    parts.forEach((t, i) => { ctx.strokeText(t, x, 1450); ctx.fillStyle = i === 1 ? "#ffff00" : "#fff"; ctx.fillText(t, x, 1450); x += ws[i] + gap; });
+    parts.forEach((t, i) => { ctx.strokeText(t, x, H / 2); ctx.fillStyle = i === 1 ? "#ffff00" : "#fff"; ctx.fillText(t, x, H / 2); x += ws[i] + gap; });
   }
 
   // logo na dolnej krawędzi gry
