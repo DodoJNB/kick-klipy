@@ -218,8 +218,36 @@ def find_font(custom):
     sys.exit("Nie znaleziono czcionki. Podaj --font ścieżka.ttf")
 
 
+TWITCH_GQL = "https://gql.twitch.tv/gql"
+TWITCH_CID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
+TWITCH_RE = re.compile(r"(?:clips\.twitch\.tv/(?:embed\?clip=)?|twitch\.tv/[A-Za-z0-9_]+/clip/)([A-Za-z0-9_\-]+)")
+
+
+def resolve_twitch(slug):
+    """Twitch: slug klipu -> bezpośredni adres mp4 z podpisem."""
+    body = [{
+        "operationName": "VideoAccessToken_Clip",
+        "variables": {"platform": "web", "slug": slug},
+        "extensions": {"persistedQuery": {"version": 1,
+            "sha256Hash": "36b89d2507fce29e5ca551df756d27c1cfe079e2609642b4390aa4c35796eb11"}},
+    }]
+    req = urllib.request.Request(TWITCH_GQL, data=json.dumps(body).encode(),
+        headers={"Client-ID": TWITCH_CID, "Content-Type": "application/json", "User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.load(r)
+    clip = (data[0].get("data") or {}).get("clip")
+    if not clip or not clip.get("videoQualities"):
+        sys.exit("Twitch nie zwrócił klipu (zły link albo klip usunięty).")
+    best = max(clip["videoQualities"], key=lambda q: float(q.get("quality") or 0))
+    tok = clip["playbackAccessToken"]
+    return f"{best['sourceURL']}?sig={tok['signature']}&token={urllib.parse.quote(tok['value'], safe='')}"
+
+
 def resolve_clip(clip, proxy):
-    """Kick: link do klipu -> adres playlisty m3u8 (przez proxy, bo Kick blokuje serwery)."""
+    """Link do klipu (Kick albo Twitch) -> adres wideo."""
+    t = TWITCH_RE.search(clip)
+    if t and "kick.com" not in clip:
+        return resolve_twitch(t.group(1))
     m = re.search(r"(clip_[A-Za-z0-9]+)", clip)
     if not m:
         sys.exit("Nie widzę ID klipu (clip_...) w linku.")
@@ -313,7 +341,7 @@ def render_overlay(path, caption, font_path, logo_path):
 def main():
     ap = argparse.ArgumentParser()
     src = ap.add_mutually_exclusive_group(required=True)
-    src.add_argument("--clip", help="link do klipu na Kicku")
+    src.add_argument("--clip", help="link do klipu na Kicku albo Twitchu")
     src.add_argument("--input", help="plik wideo albo adres m3u8")
     ap.add_argument("--caption", default="", help="napis w czerwonym pasku")
     ap.add_argument("--logo", default=os.path.join(HERE, "logo.png"),
@@ -330,7 +358,7 @@ def main():
     print("Źródło:", source)
 
     pre = []
-    if source.startswith("http"):
+    if source.startswith("http") and "twitch" not in source:
         pre = ["-user_agent", UA, "-headers", "Referer: https://kick.com/\r\n"]
     sw, sh = probe(source, pre)
 
