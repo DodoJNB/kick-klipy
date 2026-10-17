@@ -274,6 +274,49 @@ def probe(path, pre=()):
     return int(w), int(h)
 
 
+def media_info(path, pre=()):
+    """(czas trwania w s, czy jest dźwięk)"""
+    d = subprocess.run(["ffprobe", "-v", "error", *pre, "-show_entries", "format=duration",
+                        "-of", "csv=p=0", path], capture_output=True, text=True)
+    a = subprocess.run(["ffprobe", "-v", "error", *pre, "-select_streams", "a:0", "-show_entries",
+                        "stream=codec_type", "-of", "csv=p=0", path], capture_output=True, text=True)
+    try:
+        dur = float(d.stdout.strip().split("\n")[0])
+    except ValueError:
+        dur = 0.0
+    return dur, bool(a.stdout.strip())
+
+
+def speech_segments(path, pre, dur, noise_db=-32, min_sil=0.7, pad=0.15):
+    """Zwraca listę (start, koniec) fragmentów do zostawienia; ciszę dłuższą niż min_sil skraca,
+    zostawiając po 'pad' sekund z każdej strony, żeby nie ucinać słów."""
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", *pre, "-i", path, "-vn",
+                        "-af", f"silencedetect=noise={noise_db}dB:d={min_sil}", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    starts = [float(x) for x in re.findall(r"silence_start: (-?[0-9.]+)", r.stderr)]
+    ends = [float(x) for x in re.findall(r"silence_end: (-?[0-9.]+)", r.stderr)]
+    sil = []
+    for i, st in enumerate(starts):
+        en = ends[i] if i < len(ends) else dur
+        st = max(st, 0.0)
+        a, b = st + pad, en - pad
+        if b - a > 0.05:
+            sil.append((a, b))
+    if not sil:
+        return None
+    keep, cur = [], 0.0
+    for a, b in sil:
+        if a > cur:
+            keep.append((cur, a))
+        cur = b
+    if cur < dur:
+        keep.append((cur, dur))
+    keep = [(a, b) for a, b in keep if b - a > 0.1]
+    removed = dur - sum(b - a for a, b in keep)
+    print(f"Cisza: wycinam {removed:.1f} s z {dur:.1f} s ({len(keep)} fragmentów)")
+    return keep if removed >= 0.5 and keep else None
+
+
 def tlen(draw, text, font):
     return draw.textlength(text, font=font) + 10  # + obrys
 
@@ -346,6 +389,8 @@ def main():
     ap.add_argument("--caption", default="", help="napis w czerwonym pasku")
     ap.add_argument("--logo", default=os.path.join(HERE, "logo.png"),
                     help="obrazek na dolnej krawędzi gry (PNG z przezroczystością); '' = bez logo")
+    ap.add_argument("--no-logo", action="store_true", help="bez logo TSXNINE")
+    ap.add_argument("--cut-silence", action="store_true", help="wytnij fragmenty, w których nikt nic nie mówi")
     ap.add_argument("--cam", default="0,0,0.26,0.33", help="x,y,w,h kamerki jako ułamki klatki")
     ap.add_argument("--game", default="", help="x,y,w,h gry jako ułamki (domyślnie środek klatki)")
     ap.add_argument("--proxy", default=os.environ.get("KICK_PROXY", ""), help="adres Workera kick-proxy")
@@ -372,10 +417,25 @@ def main():
 
     tmp = tempfile.mkdtemp()
     overlay = os.path.join(tmp, "overlay.png")
-    render_overlay(overlay, a.caption, find_font(a.font), a.logo)
+    render_overlay(overlay, a.caption, find_font(a.font), "" if a.no_logo else a.logo)
 
-    fc = (
-        "[0:v]split=3[a][b][c];"
+    head, vin, amap = "", "[0:v]", "0:a?"
+    if a.cut_silence:
+        dur, has_audio = media_info(source, pre)
+        keep = speech_segments(source, pre, dur) if has_audio and dur > 0 else None
+        if keep:
+            parts = []
+            for i, (t0, t1) in enumerate(keep):
+                parts.append(f"[0:v]trim=start={t0:.3f}:end={t1:.3f},setpts=PTS-STARTPTS[v{i}];"
+                             f"[0:a]atrim=start={t0:.3f}:end={t1:.3f},asetpts=PTS-STARTPTS[a{i}];")
+            head = "".join(parts) + "".join(f"[v{i}][a{i}]" for i in range(len(keep))) + \
+                   f"concat=n={len(keep)}:v=1:a=1[vc][ac];"
+            vin, amap = "[vc]", "[ac]"
+        else:
+            print("Cisza: nic do wycięcia (albo brak dźwięku).")
+
+    fc = head + (
+        f"{vin}split=3[a][b][c];"
         # rozmyte tło na całą klatkę (liczone na małym obrazie, potem powiększone)
         "[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
         f"gblur=sigma=9,scale={W}:{H}:flags=bicubic,setsar=1[bg];"
@@ -389,7 +449,7 @@ def main():
     )
     cmd = (["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + pre + ["-i", source,
            "-loop", "1", "-framerate", "30", "-i", overlay,
-           "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
+           "-filter_complex", fc, "-map", "[v]", "-map", amap,
            "-t", str(a.max_seconds),
            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "-shortest", a.out])
