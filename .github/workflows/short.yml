@@ -26,9 +26,9 @@ on:
         required: false
         default: ""
       nums:
-        description: "Liczby po przecinku: głośność,start,koniec,maks.długość"
+        description: "Liczby po przecinku: głośność,start,koniec,maks.długość,góra pasa,wysokość pasa"
         required: false
-        default: "1,0,0,0"
+        default: "1,0,0,0,380,1080"
       job:
         description: "Numer zadania (wypełnia strona, ręcznie zostaw puste)"
         required: false
@@ -72,11 +72,11 @@ jobs:
           case ",$OPTS," in *,nocam,*)    EXTRA="$EXTRA --no-cam" ;; esac
           case ",$OPTS," in *,cut,*)      EXTRA="$EXTRA --cut-silence" ;; esac
           case ",$OPTS," in *,captions,*) EXTRA="$EXTRA --captions" ;; esac
-          IFS=, read -r VOLUME START END MAXLEN <<< "${NUMS:-1,0,0,0}"
+          IFS=, read -r VOLUME START END MAXLEN BANDY BANDH <<< "${NUMS:-1,0,0,0,380,1080}"
           python3 shorts/short.py --clip "$CLIP" --caption "$CAPTION" \
             --cam "$CAM" --game "$GAME" $EXTRA \
             --volume "${VOLUME:-1}" --start "${START:-0}" --end "${END:-0}" \
-            --max-seconds "${MAXLEN:-0}" --out short.mp4
+            --max-seconds "${MAXLEN:-0}" --band "${BANDY:-380},${BANDH:-1080}" --out short.mp4
 
       - name: Wynik do pobrania (zakładka Artifacts)
         uses: actions/upload-artifact@v4
