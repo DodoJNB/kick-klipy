@@ -25,6 +25,10 @@ on:
         description: "1 = bez logo TSXNINE"
         required: false
         default: ""
+      nocam:
+        description: "1 = bez kamerki (gra na cały ekran)"
+        required: false
+        default: ""
       cut:
         description: "1 = wytnij ciszę (fragmenty, gdzie nikt nic nie mówi)"
         required: false
@@ -58,9 +62,11 @@ jobs:
           GAME: ${{ inputs.game }}
           NOLOGO: ${{ inputs.nologo }}
           CUT: ${{ inputs.cut }}
+          NOCAM: ${{ inputs.nocam }}
         run: |
           EXTRA=""
           [ "$NOLOGO" = "1" ] && EXTRA="$EXTRA --no-logo"
+          [ "$NOCAM" = "1" ] && EXTRA="$EXTRA --no-cam"
           [ "$CUT" = "1" ] && EXTRA="$EXTRA --cut-silence"
           python3 shorts/short.py --clip "$CLIP" --caption "$CAPTION" \
             --cam "$CAM" --game "$GAME" $EXTRA --out short.mp4
