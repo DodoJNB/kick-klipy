@@ -30,6 +30,7 @@ W, H = 1080, 1920
 CAM_H = 773                 # wysokość sekcji z kamerką
 GAME_Y, GAME_H = 773, 792   # sekcja z grą: y 773..1565
 BOX_X0, BOX_X1 = 54, 1025   # maks. szerokość czerwonego paska
+BOX_CY_NOCAM = 360          # pasek w trybie bez kamerki (wyżej)
 BOX_CY = 740                # środek paska (lekko nad stykiem kamery i gry)
 LOGO_CX, LOGO_CY = 565, 1565  # środek logo: na dolnej krawędzi gry
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -346,7 +347,8 @@ def fit_text(draw, text, font_path, max_w):
     return ImageFont.truetype(font_path, 40), [text[:50]]
 
 
-def render_overlay(path, caption, font_path, logo_path):
+def render_overlay(path, caption, font_path, logo_path, cap_cy=None):
+    cap_cy = BOX_CY if cap_cy is None else cap_cy
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
 
@@ -359,7 +361,7 @@ def render_overlay(path, caption, font_path, logo_path):
         box_w = int(min(tw + 60, BOX_X1 - BOX_X0))
         box_h = int(max(132, line_h * len(lines) + 24))
         cx = (BOX_X0 + BOX_X1) // 2
-        x0, y0 = cx - box_w // 2, BOX_CY - box_h // 2
+        x0, y0 = cx - box_w // 2, cap_cy - box_h // 2
         d.rectangle([x0, y0, x0 + box_w, y0 + box_h], fill=(226, 18, 18, 255))
         # tekst pionowo na środku paska
         block_h = line_h * len(lines)
@@ -390,6 +392,7 @@ def main():
     ap.add_argument("--logo", default=os.path.join(HERE, "logo.png"),
                     help="obrazek na dolnej krawędzi gry (PNG z przezroczystością); '' = bez logo")
     ap.add_argument("--no-logo", action="store_true", help="bez logo TSXNINE")
+    ap.add_argument("--no-cam", action="store_true", help="bez kamerki: gra na cały ekran")
     ap.add_argument("--cut-silence", action="store_true", help="wytnij fragmenty, w których nikt nic nie mówi")
     ap.add_argument("--cam", default="0,0,0.26,0.33", help="x,y,w,h kamerki jako ułamki klatki")
     ap.add_argument("--game", default="", help="x,y,w,h gry jako ułamki (domyślnie środek klatki)")
@@ -412,12 +415,13 @@ def main():
         gx, gy, gw, gh = [float(v) for v in a.game.split(",")]
     else:  # pełna wysokość, środek klatki, proporcje sekcji gry
         gh, gy = 1.0, 0.0
-        gw = min((W / GAME_H) * sh / sw, 1.0)
+        gw = min(((W / H) if a.no_cam else (W / GAME_H)) * sh / sw, 1.0)
         gx = (1 - gw) / 2
 
     tmp = tempfile.mkdtemp()
     overlay = os.path.join(tmp, "overlay.png")
-    render_overlay(overlay, a.caption, find_font(a.font), "" if a.no_logo else a.logo)
+    render_overlay(overlay, a.caption, find_font(a.font), "" if a.no_logo else a.logo,
+                   BOX_CY_NOCAM if a.no_cam else BOX_CY)
 
     head, vin, amap = "", "[0:v]", "0:a?"
     if a.cut_silence:
@@ -447,6 +451,12 @@ def main():
         f"[t1][game]overlay=0:{GAME_Y}[t2];"
         "[t2][1:v]overlay=0:0:shortest=1,format=yuv420p[v]"
     )
+    if a.no_cam:
+        fc = head + (
+            f"{vin}crop=trunc(iw*{gw}):trunc(ih*{gh}):trunc(iw*{gx}):trunc(ih*{gy}),"
+            f"scale={W}:{H},setsar=1[g];"
+            "[g][1:v]overlay=0:0:shortest=1,format=yuv420p[v]"
+        )
     cmd = (["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + pre + ["-i", source,
            "-loop", "1", "-framerate", "30", "-i", overlay,
            "-filter_complex", fc, "-map", "[v]", "-map", amap,
