@@ -57,11 +57,18 @@
   .msg.err { color: #ff6b6b; }
   .more { display: block; margin: 28px auto 0; }
   .more[hidden] { display: none; }
+  .item { position: relative; }
+  .rank { top: 8px; right: 8px; background: var(--accent); color: #0b0e0f; }
+  a.cut { display: inline-block; margin-top: 8px; padding: 6px 12px; border-radius: 8px; background: var(--card);
+          border: 1px solid var(--line); color: var(--text); text-decoration: none; font-size: 14px; font-weight: 600; }
+  a.cut:hover { border-color: var(--accent); color: var(--accent); }
+  .nav { float: right; font-size: 14px; }
+  .nav a { color: var(--muted); text-decoration: none; margin-left: 14px; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Klipy z Kicka</h1>
+  <h1>Klipy z Kicka <span class="nav"><a href="shorty.html">✂ Shorty</a></span></h1>
 
   <form id="form">
     <input id="channel" placeholder="Nazwa kanału, np. mamm0n" autocomplete="off" autocapitalize="off" spellcheck="false" required>
@@ -69,6 +76,7 @@
       <button type="button" data-v="date" class="on">Najnowsze</button>
       <button type="button" data-v="view">Najpopularniejsze</button>
     </div>
+    <button type="button" id="rank" title="Najpopularniejsze klipy z ostatnich 7 dni">🏆 Ranking tygodnia</button>
     <select id="time" title="Zakres czasu">
       <option value="all">Cały czas</option>
       <option value="month">Miesiąc</option>
@@ -104,6 +112,7 @@ $("sort").addEventListener("click", (e) => {
   load(true);
 });
 $("time").addEventListener("change", () => load(true));
+$("rank").addEventListener("click", () => { setSort("view"); $("time").value = "week"; load(true); });
 $("form").addEventListener("submit", (e) => { e.preventDefault(); load(true); });
 moreBtn.addEventListener("click", () => load(false));
 
@@ -128,17 +137,20 @@ function fmtViews(n) {
   return n >= 1000 ? (n / 1000).toFixed(1).replace(".", ",") + " tys." : String(n);
 }
 
-function card(c) {
+function card(c, i) {
   const meta = [c.category, ago(c.createdAt)].filter(Boolean).map(esc).join(" • ");
-  return `<a class="clip" href="${esc(c.url)}" target="_blank" rel="noopener">
+  const rank = sort === "view" && $("time").value === "week" ? `<span class="badge rank">#${c.rank}</span>` : "";
+  return `<div class="item"><a class="clip" href="${esc(c.url)}" target="_blank" rel="noopener">
     <div class="thumb">
+      ${rank}
       ${c.thumbnail ? `<img src="${esc(c.thumbnail)}" alt="" loading="lazy">` : ""}
       <span class="badge dur">${fmtDur(c.duration)}</span>
       <span class="badge views">${fmtViews(c.views)} wyświetleń</span>
     </div>
     <div class="title">${esc(c.title)}</div>
     <div class="meta">${meta}</div>
-  </a>`;
+  </a>
+  <a class="cut" href="shorty.html?clip=${encodeURIComponent(c.url)}">✂ Zrób short</a></div>`;
 }
 
 async function load(reset) {
@@ -181,6 +193,8 @@ async function load(reset) {
     if (!data.clips.length && reset) {
       out.innerHTML = '<div class="msg">Brak klipów.</div>';
     } else {
+      const base = $("grid").children.length;
+      data.clips.forEach((c, i) => { c.rank = base + i + 1; });
       $("grid").insertAdjacentHTML("beforeend", data.clips.map(card).join(""));
     }
     cursor = data.nextCursor;
