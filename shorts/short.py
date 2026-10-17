@@ -318,6 +318,141 @@ def speech_segments(path, pre, dur, noise_db=-32, min_sil=0.7, pad=0.15):
     return keep if removed >= 0.5 and keep else None
 
 
+# ---------- napisy (Whisper), głośność, przycinanie ----------
+def extract_wav(source, pre, out):
+    r = subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *pre, "-i", source,
+                        "-vn", "-ac", "1", "-ar", "16000", out], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit("Nie mogę wyciągnąć dźwięku do rozpoznawania mowy:\n" + r.stderr[-300:])
+
+
+def transcribe(source, pre, tmp, lang="pl", model_name="small"):
+    """Zwraca (słowa [(start, koniec, tekst)], frazy [tekst]) z rozpoznawania mowy (faster-whisper)."""
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        sys.exit("Brak biblioteki faster-whisper (pip install faster-whisper).")
+    wav = os.path.join(tmp, "audio.wav")
+    extract_wav(source, pre, wav)
+    model = WhisperModel(model_name, device="cpu", compute_type="int8")
+    segs, info = model.transcribe(wav, language=lang or None, word_timestamps=True,
+                                  vad_filter=True, beam_size=1)
+    words, phrases = [], []
+    for sg in segs:
+        phrases.append(sg.text.strip())
+        for w in sg.words or []:
+            t = w.word.strip()
+            if t:
+                words.append((float(w.start), float(w.end), t))
+    print(f"Rozpoznano {len(words)} słów (język: {getattr(info, 'language', '?')}).")
+    return words, phrases
+
+
+def load_words(path):
+    d = json.load(open(path, encoding="utf-8"))
+    words = [(float(w[0]), float(w[1]), str(w[2])) for w in d["words"]]
+    return words, d.get("phrases", [])
+
+
+def remap_words(words, segs, limit):
+    """Przelicza czasy słów na czasy filmu po wycięciach; odrzuca słowa z wyciętych miejsc."""
+    out, off = [], 0.0
+    for a, b in segs:
+        for st, en, t in words:
+            if a - 0.01 <= st < b:
+                out.append((off + (st - a), off + (min(en, b) - a), t))
+        off += b - a
+    return [w for w in out if w[0] < limit]
+
+
+def ass_time(t):
+    cs = int(round(t * 100))
+    return f"{cs // 360000}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
+
+
+def write_ass(path, words, font_name="DejaVu Sans", y_bottom=1450, size=76):
+    """Napisy w stylu TikToka: 2-3 słowa naraz, aktualnie mówione słowo na żółto."""
+    groups, cur = [], []
+    for w in words:
+        if cur and (len(cur) >= 3 or w[0] - cur[-1][1] > 0.6
+                    or len(" ".join(x[2] for x in cur + [w])) > 22):
+            groups.append(cur)
+            cur = []
+        cur.append(w)
+    if cur:
+        groups.append(cur)
+
+    head = (
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\nWrapStyle: 2\n\n"
+        "[V4+ Styles]\n"
+        "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,"
+        "Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
+        "Style: Default,%s,%d,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,2,60,60,%d,1\n\n"
+        "[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
+    ) % (W, H, font_name, size, H - y_bottom)
+    lines = []
+    for g in groups:
+        for i, (st, en, _) in enumerate(g):
+            end = g[i + 1][0] if i + 1 < len(g) else max(en, st + 0.2) + 0.15
+            if end <= st:
+                end = st + 0.1
+            txt = " ".join(
+                ("{\\c&H00FFFF&}%s{\\c&HFFFFFF&}" if j == i else "%s") % x[2].upper().replace("{", "(").replace("}", ")")
+                for j, x in enumerate(g))
+            lines.append(f"Dialogue: 0,{ass_time(st)},{ass_time(end)},Default,,0,0,0,,{txt}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(head + "\n".join(lines) + "\n")
+
+
+def suggest_captions(phrases, words):
+    """Proponuje do 3 krótkich napisów do czerwonego paska na podstawie tego, co padło w klipie."""
+    cands = []
+    for ph in phrases:
+        for part in re.split(r"(?<=[.!?…])\s+|,\s+", ph):
+            part = part.strip(" .,;:-–—")
+            if 6 <= len(part) <= 40:
+                cands.append(part)
+    if not cands and words:  # brak zdań: bierz po 3-4 słowa
+        toks = [w[2] for w in words]
+        cands = [" ".join(toks[i:i + 4]) for i in range(0, min(len(toks), 12), 4)]
+
+    def score(c):
+        sc = 0.0
+        if re.search(r"\d", c): sc += 2
+        if "!" in c or "?" in c: sc += 1.5
+        sc -= abs(len(c) - 20) / 10
+        sc += max(0, 1 - cands.index(c) / max(1, len(cands))) * 0.7  # wcześniejsze lekko wyżej
+        return sc
+
+    out = []
+    for c in sorted(set(cands), key=score, reverse=True):
+        c = re.sub(r"[!?.…]+$", "", c).upper()
+        if c and c not in out:
+            out.append(c)
+        if len(out) == 3:
+            break
+    return out
+
+
+def plan_segments(dur, start, end, silence):
+    """Lista (od, do) fragmentów źródła do zostawienia (po przycięciu i ewentualnym wycięciu ciszy)."""
+    lo = max(0.0, start)
+    hi = min(dur, end) if end and end > 0 else dur
+    if hi <= lo:
+        sys.exit("Koniec fragmentu jest przed początkiem.")
+    base = [(lo, hi)]
+    if silence:
+        out = []
+        for a, b in silence:
+            a2, b2 = max(a, lo), min(b, hi)
+            if b2 - a2 > 0.1:
+                out.append((a2, b2))
+        base = out or base
+    if base == [(0.0, dur)]:
+        return None
+    return base
+
+
 def tlen(draw, text, font):
     return draw.textlength(text, font=font) + 10  # + obrys
 
@@ -393,13 +528,20 @@ def main():
                     help="obrazek na dolnej krawędzi gry (PNG z przezroczystością); '' = bez logo")
     ap.add_argument("--no-logo", action="store_true", help="bez logo TSXNINE")
     ap.add_argument("--no-cam", action="store_true", help="bez kamerki: gra na cały ekran")
+    ap.add_argument("--captions", action="store_true", help="napisy słowo po słowie (Whisper)")
+    ap.add_argument("--lang", default="pl", help="język mowy do napisów (pl, en, '' = automatycznie)")
+    ap.add_argument("--volume", type=float, default=1.0, help="głośność dźwięku (1 = bez zmian)")
+    ap.add_argument("--start", type=float, default=0.0, help="początek fragmentu (s)")
+    ap.add_argument("--end", type=float, default=0.0, help="koniec fragmentu (s), 0 = do końca")
+    ap.add_argument("--words-json", default="", help="gotowe słowa zamiast Whisper (do testów)")
+    ap.add_argument("--suggest", default="", help="tylko zaproponuj napisy i zapisz do tego pliku JSON")
     ap.add_argument("--cut-silence", action="store_true", help="wytnij fragmenty, w których nikt nic nie mówi")
     ap.add_argument("--cam", default="0,0,0.26,0.33", help="x,y,w,h kamerki jako ułamki klatki")
     ap.add_argument("--game", default="", help="x,y,w,h gry jako ułamki (domyślnie środek klatki)")
     ap.add_argument("--proxy", default=os.environ.get("KICK_PROXY", ""), help="adres Workera kick-proxy")
     ap.add_argument("--font", default="")
     ap.add_argument("--out", default="short.mp4")
-    ap.add_argument("--max-seconds", type=int, default=180)
+    ap.add_argument("--max-seconds", type=int, default=180, help="maks. długość filmu (0 = 180)")
     a = ap.parse_args()
 
     source = resolve_clip(a.clip, a.proxy) if a.clip else a.input
@@ -419,48 +561,93 @@ def main():
         gx = (1 - gw) / 2
 
     tmp = tempfile.mkdtemp()
+
+    # --- tryb propozycji napisów: tylko rozpoznanie mowy ---
+    if a.suggest:
+        words, phrases = load_words(a.words_json) if a.words_json else transcribe(source, pre, tmp, a.lang)
+        data = {"suggestions": suggest_captions(phrases, words),
+                "text": " ".join(w[2] for w in words)[:600],
+                "words": [[round(x[0], 2), round(x[1], 2), x[2]] for x in words],
+                "phrases": phrases}
+        with open(a.suggest, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        print("Propozycje:", data["suggestions"])
+        return
+
     overlay = os.path.join(tmp, "overlay.png")
     render_overlay(overlay, a.caption, find_font(a.font), "" if a.no_logo else a.logo,
                    BOX_CY_NOCAM if a.no_cam else BOX_CY)
 
-    head, vin, amap = "", "[0:v]", "0:a?"
+    limit = a.max_seconds if a.max_seconds and a.max_seconds > 0 else 180
+    dur, has_audio = media_info(source, pre)
+    silence = None
     if a.cut_silence:
-        dur, has_audio = media_info(source, pre)
-        keep = speech_segments(source, pre, dur) if has_audio and dur > 0 else None
-        if keep:
-            parts = []
-            for i, (t0, t1) in enumerate(keep):
-                parts.append(f"[0:v]trim=start={t0:.3f}:end={t1:.3f},setpts=PTS-STARTPTS[v{i}];"
-                             f"[0:a]atrim=start={t0:.3f}:end={t1:.3f},asetpts=PTS-STARTPTS[a{i}];")
-            head = "".join(parts) + "".join(f"[v{i}][a{i}]" for i in range(len(keep))) + \
-                   f"concat=n={len(keep)}:v=1:a=1[vc][ac];"
-            vin, amap = "[vc]", "[ac]"
+        if has_audio and dur > 0:
+            kept = speech_segments(source, pre, dur)
+            silence = kept  # fragmenty, w których ktoś mówi
+            if not kept:
+                print("Cisza: nic do wycięcia.")
         else:
-            print("Cisza: nic do wycięcia (albo brak dźwięku).")
+            print("Cisza: brak dźwięku, pomijam.")
+    segs = plan_segments(dur, a.start, a.end, silence) if dur > 0 else None
 
-    fc = head + (
-        f"{vin}split=3[a][b][c];"
-        # rozmyte tło na całą klatkę (liczone na małym obrazie, potem powiększone)
-        "[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
-        f"gblur=sigma=9,scale={W}:{H}:flags=bicubic,setsar=1[bg];"
-        f"[b]crop=trunc(iw*{cw}):trunc(ih*{ch}):trunc(iw*{cx}):trunc(ih*{cy}),"
-        f"scale={W}:{CAM_H},setsar=1[cam];"
-        f"[c]crop=trunc(iw*{gw}):trunc(ih*{gh}):trunc(iw*{gx}):trunc(ih*{gy}),"
-        f"scale={W}:{GAME_H},setsar=1[game];"
-        "[bg][cam]overlay=0:0[t1];"
-        f"[t1][game]overlay=0:{GAME_Y}[t2];"
-        "[t2][1:v]overlay=0:0:shortest=1,format=yuv420p[v]"
-    )
+    words = []
+    if a.captions:
+        if not has_audio:
+            print("Napisy: brak dźwięku, pomijam.")
+        else:
+            words, _ = load_words(a.words_json) if a.words_json else transcribe(source, pre, tmp, a.lang)
+            words = remap_words(words, segs or [(0.0, dur or 1e9)], limit)
+            print(f"Napisy: {len(words)} słów.")
+    ass_path = os.path.join(tmp, "napisy.ass")
+    if words:
+        write_ass(ass_path, words)
+
+    head, vin, ain = "", "[0:v]", "[0:a]"
+    if segs:
+        parts = []
+        for i, (t0, t1) in enumerate(segs):
+            parts.append(f"[0:v]trim=start={t0:.3f}:end={t1:.3f},setpts=PTS-STARTPTS[v{i}];")
+            if has_audio:
+                parts.append(f"[0:a]atrim=start={t0:.3f}:end={t1:.3f},asetpts=PTS-STARTPTS[a{i}];")
+        n = len(segs)
+        if has_audio:
+            head = "".join(parts) + "".join(f"[v{i}][a{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=1[vc][ac];"
+            vin, ain = "[vc]", "[ac]"
+        else:
+            head = "".join(parts) + "".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[vc];"
+            vin = "[vc]"
+    amap = ain if (segs and has_audio) else "0:a?"
+    if has_audio and abs(a.volume - 1.0) > 0.01:
+        vol = max(0.0, min(a.volume, 5.0))
+        head += f"{ain}volume={vol:.3f}[ao];"
+        amap = "[ao]"
+
+    subs = f",ass='{ass_path}'" if words else ""
     if a.no_cam:
         fc = head + (
             f"{vin}crop=trunc(iw*{gw}):trunc(ih*{gh}):trunc(iw*{gx}):trunc(ih*{gy}),"
             f"scale={W}:{H},setsar=1[g];"
-            "[g][1:v]overlay=0:0:shortest=1,format=yuv420p[v]"
+            f"[g][1:v]overlay=0:0:shortest=1{subs},format=yuv420p[v]"
+        )
+    else:
+        fc = head + (
+            f"{vin}split=3[a][b][c];"
+            # rozmyte tło na całą klatkę (liczone na małym obrazie, potem powiększone)
+            "[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
+            f"gblur=sigma=9,scale={W}:{H}:flags=bicubic,setsar=1[bg];"
+            f"[b]crop=trunc(iw*{cw}):trunc(ih*{ch}):trunc(iw*{cx}):trunc(ih*{cy}),"
+            f"scale={W}:{CAM_H},setsar=1[cam];"
+            f"[c]crop=trunc(iw*{gw}):trunc(ih*{gh}):trunc(iw*{gx}):trunc(ih*{gy}),"
+            f"scale={W}:{GAME_H},setsar=1[game];"
+            "[bg][cam]overlay=0:0[t1];"
+            f"[t1][game]overlay=0:{GAME_Y}[t2];"
+            f"[t2][1:v]overlay=0:0:shortest=1{subs},format=yuv420p[v]"
         )
     cmd = (["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + pre + ["-i", source,
            "-loop", "1", "-framerate", "30", "-i", overlay,
            "-filter_complex", fc, "-map", "[v]", "-map", amap,
-           "-t", str(a.max_seconds),
+           "-t", str(limit),
            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "-shortest", a.out])
     subprocess.run(cmd, check=True)
