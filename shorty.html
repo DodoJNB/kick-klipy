@@ -42,7 +42,7 @@
   .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:10px; }
   .bar i { display:block; height:100%; width:30%; background:var(--accent); animation:run 1.4s infinite ease-in-out; }
   @keyframes run { 0%{margin-left:-30%} 100%{margin-left:100%} }
-</style>
+.chk{display:flex;align-items:center;gap:10px;margin-top:12px;color:var(--text);cursor:pointer}.chk input{width:20px;height:20px;accent-color:#53fc18}</style>
 </head>
 <body>
 <div class="wrap">
@@ -77,6 +77,8 @@
         <input type="text" id="caption" maxlength="80" placeholder="np. POŻAR W CHACIE" autocomplete="off">
         <label for="gamepos">Które miejsce gry pokazać (lewo ⟷ prawo)</label>
         <input type="range" class="range" id="gamepos" min="0" max="100" value="50">
+        <label class="chk"><input type="checkbox" id="logoon" checked> Logo TSXNINE</label>
+        <label class="chk"><input type="checkbox" id="cut"> Wytnij ciszę (gdy nikt nic nie mówi)</label>
       </div>
 
       <div class="panel">
@@ -216,7 +218,7 @@ function draw() {
   }
 
   // logo na dolnej krawędzi gry
-  if (logo.complete && logo.naturalWidth) {
+  if ($("logoon").checked && logo.complete && logo.naturalWidth) {
     ctx.drawImage(logo, LOGO_CX - logo.naturalWidth / 2, LOGO_CY - logo.naturalHeight / 2);
   }
 }
@@ -346,6 +348,7 @@ async function loadClip() {
   $("load").disabled = false;
 }
 $("load").addEventListener("click", loadClip);
+$("logoon").addEventListener("change", () => draw());
 $("clip").addEventListener("keydown", (e) => { if (e.key === "Enter") loadClip(); });
 
 // ---------- robienie shorta ----------
@@ -364,6 +367,8 @@ $("make").addEventListener("click", async () => {
     clip: clipUrl, caption: $("caption").value.trim(),
     cam: [cam.x, cam.y, cam.w, camH()].map((n) => n.toFixed(4)).join(","),
     game: [gx, 0, gw, 1].map((n) => n.toFixed(4)).join(","),
+    nologo: !$("logoon").checked,
+    cut: $("cut").checked,
   };
   try {
     const r = await fetch(`${API}/api/short`, { method: "POST", headers: { "Content-Type": "application/json", "X-Admin-Key": key }, body: JSON.stringify(body) });
