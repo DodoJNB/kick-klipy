@@ -42,12 +42,27 @@
   .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:10px; }
   .bar i { display:block; height:100%; width:30%; background:var(--accent); animation:run 1.4s infinite ease-in-out; }
   @keyframes run { 0%{margin-left:-30%} 100%{margin-left:100%} }
-.chk{display:flex;align-items:center;gap:10px;margin-top:12px;color:var(--text);cursor:pointer}.chk input{width:20px;height:20px;accent-color:#53fc18}</style>
+.chk{display:flex;align-items:center;gap:10px;margin-top:12px;color:var(--text);cursor:pointer}.chk input{width:20px;height:20px;accent-color:#53fc18}.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chip{background:#0f1314;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer}
+.chip:hover{border-color:var(--accent)}
+.sm{padding:6px 12px;font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+input[type=number],select,textarea{font:inherit;color:var(--text);background:#0f1314;border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+textarea{min-height:90px;resize:vertical}
+.top{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap}
+.top a{color:var(--muted);text-decoration:none;font-size:14px}
+.job{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
+.job:first-child{border-top:0}.job .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job .s{color:var(--muted);font-size:13px;white-space:nowrap}.job a{color:var(--accent);text-decoration:none;font-weight:700}
+.job .s.ok{color:var(--accent)}.job .s.err{color:#ff6b6b}
+details.panel>summary{cursor:pointer;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:15px;letter-spacing:.04em}
+</style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Zrób short z klipu</h1>
-  <p class="sub">Wklej link do klipu z Kicka, zaznacz kamerkę na podglądzie i kliknij przycisk. Gotowy film pobierzesz tutaj.</p>
+  <div class="top"><h1>Zrób short z klipu</h1><a href="index.html">← Klipy</a></div>
+  <p class="sub">Wklej link do klipu z Kicka lub Twitcha, zaznacz kamerkę na podglądzie i kliknij przycisk. Gotowy film pobierzesz tutaj.</p>
+  <div class="row"><input type="password" id="pass" placeholder="Hasło do panelu" autocomplete="current-password"></div>
 
   <div class="row">
     <input type="text" id="clip" placeholder="Link do klipu z Kicka lub Twitcha" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -74,7 +89,12 @@
       <div class="panel">
         <h2>2. Napis i gra</h2>
         <label for="caption">Napis w czerwonym pasku</label>
-        <input type="text" id="caption" maxlength="80" placeholder="np. POŻAR W CHACIE" autocomplete="off">
+        <div class="row" style="margin-bottom:0">
+          <input type="text" id="caption" maxlength="80" placeholder="np. POŻAR W CHACIE" autocomplete="off">
+          <button id="suggest" class="sm" title="Rozpozna mowę w klipie i zaproponuje napisy (ok. 1–2 min)">💡 Propozycje</button>
+        </div>
+        <div class="chips" id="chips"></div>
+        <div class="msg" id="sugmsg" style="min-height:0"></div>
         <label for="gamepos">Które miejsce gry pokazać (lewo ⟷ prawo)</label>
         <input type="range" class="range" id="gamepos" min="0" max="100" value="50">
         <label class="chk"><input type="checkbox" id="nocam"> Bez kamerki (sama gra na cały ekran)</label>
@@ -83,10 +103,38 @@
       </div>
 
       <div class="panel">
+        <h2>Opcje filmu</h2>
+        <label class="chk" style="margin-top:0"><input type="checkbox" id="captions"> Napisy słowo po słowie (rozpoznawanie mowy, montaż trwa dłużej)</label>
+        <label for="vol" id="vollab">Głośność: 100%</label>
+        <input type="range" class="range" id="vol" min="0" max="300" step="5" value="100">
+        <label>Fragment klipu (zostaw puste = cały klip)</label>
+        <div class="grid2">
+          <input type="number" id="trimA" min="0" step="0.1" placeholder="początek (s)">
+          <input type="number" id="trimB" min="0" step="0.1" placeholder="koniec (s)">
+        </div>
+        <div class="row" style="margin:8px 0 0">
+          <button id="setA" class="sm" type="button">⟦ początek tutaj</button>
+          <button id="setB" class="sm" type="button">koniec tutaj ⟧</button>
+          <button id="clrT" class="sm" type="button">wyczyść</button>
+        </div>
+        <label for="maxlen">Maksymalna długość filmu</label>
+        <select id="maxlen">
+          <option value="0">bez limitu</option>
+          <option value="30">30 s</option>
+          <option value="45">45 s</option>
+          <option value="60">60 s</option>
+          <option value="90">90 s</option>
+        </select>
+        <div class="row" style="margin:14px 0 0">
+          <button id="saveprof" class="sm" type="button">💾 Zapisz te ustawienia dla kanału</button>
+        </div>
+        <div class="msg" id="profmsg" style="min-height:0"></div>
+      </div>
+
+      <div class="panel">
         <h2>3. Zrób film</h2>
         <div class="row">
-          <input type="password" id="pass" placeholder="Hasło do panelu" autocomplete="current-password">
-          <button id="make" class="primary">Zrób short</button>
+          <button id="make" class="primary" style="flex:1">Zrób short</button>
         </div>
         <div class="msg" id="msg"></div>
         <div class="bar" id="bar" hidden><i></i></div>
@@ -101,6 +149,21 @@
         <div class="hint">Podgląd jest przybliżony (czcionka i rozmycie tła mogą się trochę różnić od gotowego filmu).</div>
       </div>
     </div>
+  </div>
+
+  <details class="panel" id="queue">
+    <summary>Kolejka: kilka klipów naraz</summary>
+    <p class="hint">Wklej linki do klipów, po jednym w linii. Wszystkie dostaną te same ustawienia co wyżej (kamerka, logo, napisy, głośność…).</p>
+    <textarea id="qlinks" placeholder="https://kick.com/mamm0n/clips/clip_...&#10;https://kick.com/mamm0n/clips/clip_..."></textarea>
+    <label class="chk"><input type="checkbox" id="qtitle" checked> Napis w pasku = tytuł klipu</label>
+    <div class="row" style="margin-top:12px"><button id="qgo" class="primary" style="flex:1">Zrób wszystkie</button></div>
+    <div id="qlist"></div>
+  </details>
+
+  <div class="panel" id="hist">
+    <h2>Historia shortów</h2>
+    <div class="row"><button id="hrefresh" class="sm">Odśwież</button></div>
+    <div id="hlist"><div class="hint">Wpisz hasło i kliknij Odśwież. Filmy są kasowane po 14 dniach.</div></div>
   </div>
 </div>
 
@@ -225,6 +288,16 @@ function draw() {
     });
   }
 
+  // przykład napisów słowo po słowie (tylko pokazuje położenie)
+  if ($("captions").checked) {
+    ctx.font = 'bold 76px "DejaVu Sans", Verdana, Arial, sans-serif';
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.lineJoin = "round"; ctx.lineWidth = 14; ctx.strokeStyle = "#000";
+    const parts = ["TO", "JEST", "PRZYKŁAD"], gap = 22;
+    const ws = parts.map((t) => ctx.measureText(t).width), total = ws.reduce((a, b) => a + b, 0) + gap * 2;
+    let x = (W - total) / 2;
+    parts.forEach((t, i) => { ctx.strokeText(t, x, 1450); ctx.fillStyle = i === 1 ? "#ffff00" : "#fff"; ctx.fillText(t, x, 1450); x += ws[i] + gap; });
+  }
+
   // logo na dolnej krawędzi gry
   if ($("logoon").checked && logo.complete && logo.naturalWidth) {
     ctx.drawImage(logo, LOGO_CX - logo.naturalWidth / 2, LOGO_CY - logo.naturalHeight / 2);
@@ -321,8 +394,12 @@ async function loadClip() {
     }
     const c = { title };
 
-    const saved = store.get("cam:" + channel);
+    clipTitle = title;
+    $("chips").innerHTML = ""; say($("sugmsg"), "");
+    if (title) showChips([title.toUpperCase().slice(0, 40)]);
+    const saved = store.get("cam:" + channel), prof = store.get("prof:" + channel);
     if (saved) { try { cam = JSON.parse(saved); } catch {} } else cam = { x: 0, y: 0, w: 0.26 };
+    if (prof) { try { applySettings(JSON.parse(prof)); say($("profmsg"), "Wczytano zapisane ustawienia kanału.", "ok"); } catch {} }
     $("main").hidden = false;
     $("result").innerHTML = ""; say($("msg"), "");
     $("caption").value = $("caption").value || (c.title && c.title.length < 40 ? c.title : "");
@@ -360,52 +437,208 @@ $("logoon").addEventListener("change", () => draw());
 $("nocam").addEventListener("change", () => { $("box").style.display = $("nocam").checked ? "none" : ""; draw(); });
 $("clip").addEventListener("keydown", (e) => { if (e.key === "Enter") loadClip(); });
 
+// ---------- opcje, profil kanału, fragment ----------
+function getSettings() {
+  return {
+    cam: { ...cam }, gamepos: Number($("gamepos").value), nocam: $("nocam").checked, logoon: $("logoon").checked,
+    cut: $("cut").checked, captions: $("captions").checked, vol: Number($("vol").value), maxlen: $("maxlen").value,
+  };
+}
+function applySettings(p) {
+  if (!p) return;
+  if (p.cam) cam = { x: +p.cam.x || 0, y: +p.cam.y || 0, w: +p.cam.w || 0.26 };
+  if (p.gamepos != null) $("gamepos").value = p.gamepos;
+  $("nocam").checked = !!p.nocam; $("logoon").checked = p.logoon !== false;
+  $("cut").checked = !!p.cut; $("captions").checked = !!p.captions;
+  if (p.vol != null) $("vol").value = p.vol;
+  if (p.maxlen != null) $("maxlen").value = p.maxlen;
+  box.style.display = $("nocam").checked ? "none" : "";
+  updVol(); layoutBox(); draw();
+}
+function updVol() { $("vollab").textContent = "Głośność: " + $("vol").value + "%" + (Number($("vol").value) > 150 ? " (może trzeszczeć)" : ""); }
+$("vol").addEventListener("input", updVol);
+$("captions").addEventListener("change", draw);
+$("saveprof").addEventListener("click", () => {
+  if (!channel) return;
+  store.set("prof:" + channel, JSON.stringify(getSettings()));
+  say($("profmsg"), "Zapisano. Przy następnym klipie z tego kanału ustawienia wczytają się same.", "ok");
+});
+$("setA").addEventListener("click", () => { $("trimA").value = vid.currentTime ? vid.currentTime.toFixed(1) : ""; showTrim(); });
+$("setB").addEventListener("click", () => { $("trimB").value = vid.currentTime ? vid.currentTime.toFixed(1) : ""; showTrim(); });
+$("clrT").addEventListener("click", () => { $("trimA").value = ""; $("trimB").value = ""; showTrim(); });
+function showTrim() {
+  const a = Number($("trimA").value) || 0, b = Number($("trimB").value) || 0;
+  say($("profmsg"), b > a ? `Fragment: ${fmt(a)} – ${fmt(b)} (${(b - a).toFixed(1)} s)` : (a ? `Od ${fmt(a)} do końca` : ""), "");
+}
+$("trimA").addEventListener("input", showTrim); $("trimB").addEventListener("input", showTrim);
+vid.addEventListener("timeupdate", () => {
+  const b = Number($("trimB").value);
+  if (b > 0 && !vid.paused && vid.currentTime >= b) vid.pause();
+});
+
 // ---------- robienie shorta ----------
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 $("pass").value = store.get("sn_key") || "";
+const keyVal = () => { const k = $("pass").value; if (k) store.set("sn_key", k); return k; };
 
-$("make").addEventListener("click", async () => {
-  const key = $("pass").value;
-  if (!key) { say($("msg"), "Wpisz hasło.", "err"); return; }
-  store.set("sn_key", key); saveCam();
-  $("make").disabled = true; $("result").innerHTML = ""; $("bar").hidden = false;
-  say($("msg"), "Wysyłam zlecenie…");
+function buildBody(extra = {}) {
   const gw = Math.min(1, ($("nocam").checked ? W / H : W / GAME_H) * (1 / aspect()));
   const gx = (1 - gw) * (Number($("gamepos").value) / 100);
-  const body = {
-    clip: clipUrl, caption: $("caption").value.trim(),
+  return {
     cam: [cam.x, cam.y, cam.w, camH()].map((n) => n.toFixed(4)).join(","),
     game: [gx, 0, gw, 1].map((n) => n.toFixed(4)).join(","),
-    nologo: !$("logoon").checked,
-    nocam: $("nocam").checked,
-    cut: $("cut").checked,
+    nologo: !$("logoon").checked, nocam: $("nocam").checked, cut: $("cut").checked,
+    captions: $("captions").checked, volume: Number($("vol").value) / 100,
+    start: Number($("trimA").value) || 0, end: Number($("trimB").value) || 0, maxlen: Number($("maxlen").value) || 0,
+    ...extra,
   };
-  try {
-    const r = await fetch(`${API}/api/short`, { method: "POST", headers: { "Content-Type": "application/json", "X-Admin-Key": key }, body: JSON.stringify(body) });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || "Błąd " + r.status);
+}
 
-    const t0 = Date.now();
-    for (let i = 0; i < 150; i++) {
-      await wait(i < 3 ? 3000 : 5000);
-      const s = await (await fetch(`${API}/api/short/status?job=${j.job}`, { headers: { "X-Admin-Key": key } })).json();
-      const sec = Math.round((Date.now() - t0) / 1000);
-      if (s.state === "success") {
-        $("bar").hidden = true;
-        say($("msg"), "Gotowe!", "ok");
-        $("result").innerHTML = `<video controls playsinline src="${s.url}"></video><a class="dl" href="${s.url}" download="short.mp4">Pobierz short.mp4</a>`;
-        $("make").disabled = false; return;
-      }
-      if (s.state === "failure") throw new Error("Montaż się nie udał. Log: " + (s.log || "w GitHub → Actions"));
-      if (s.error) throw new Error(s.error);
-      say($("msg"), (s.state === "queued" ? "W kolejce… " : "Montaż trwa… ") + sec + " s");
-    }
-    throw new Error("Montaż trwa zbyt długo. Sprawdź GitHub → Actions.");
+async function api(path, key, method = "GET", body) {
+  const r = await fetch(API + path, { method, headers: { "Content-Type": "application/json", "X-Admin-Key": key }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "Błąd " + r.status);
+  return j;
+}
+
+// czeka na wynik zadania; onTick(stan, sekundy)
+async function waitFor(path, key, onTick, maxPolls = 150) {
+  const t0 = Date.now();
+  for (let i = 0; i < maxPolls; i++) {
+    await wait(i < 3 ? 3000 : 5000);
+    const s = await api(path, key);
+    const sec = Math.round((Date.now() - t0) / 1000);
+    if (s.state === "success" || s.state === "failure") return s;
+    onTick && onTick(s.state, sec);
+  }
+  throw new Error("To trwa zbyt długo. Sprawdź GitHub → Actions.");
+}
+
+$("make").addEventListener("click", async () => {
+  const key = keyVal();
+  if (!key) { say($("msg"), "Wpisz hasło na górze strony.", "err"); return; }
+  saveCam();
+  $("make").disabled = true; $("result").innerHTML = ""; $("bar").hidden = false;
+  say($("msg"), "Wysyłam zlecenie…");
+  try {
+    const j = await api("/api/short", key, "POST", buildBody({ clip: clipUrl, caption: $("caption").value.trim() }));
+    const s = await waitFor(`/api/short/status?job=${j.job}`, key,
+      (st, sec) => say($("msg"), (st === "queued" ? "W kolejce… " : "Montaż trwa… ") + sec + " s"));
+    if (s.state === "failure") throw new Error("Montaż się nie udał. Log: " + (s.log || "w GitHub → Actions"));
+    $("bar").hidden = true;
+    say($("msg"), "Gotowe!", "ok");
+    $("result").innerHTML = `<video controls playsinline src="${s.url}"></video><a class="dl" href="${s.url}" download="short.mp4">Pobierz short.mp4</a>`;
   } catch (e) {
     $("bar").hidden = true; say($("msg"), e.message, "err");
   }
   $("make").disabled = false;
 });
+
+// ---------- propozycje napisów ----------
+function showChips(list) {
+  $("chips").innerHTML = "";
+  for (const t of list) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = t;
+    b.addEventListener("click", () => { $("caption").value = t.slice(0, 80); draw(); });
+    $("chips").appendChild(b);
+  }
+}
+let clipTitle = "";
+$("suggest").addEventListener("click", async () => {
+  const key = keyVal();
+  if (!key) { say($("sugmsg"), "Wpisz hasło na górze strony.", "err"); return; }
+  if (!clipUrl) return;
+  $("suggest").disabled = true; say($("sugmsg"), "Zlecam rozpoznanie mowy…");
+  try {
+    const j = await api("/api/suggest", key, "POST", { clip: clipUrl });
+    const s = await waitFor(`/api/suggest/status?job=${j.job}`, key,
+      (st, sec) => say($("sugmsg"), (st === "queued" ? "W kolejce… " : "Słucham klipu… ") + sec + " s"), 80);
+    if (s.state === "failure") throw new Error("Nie udało się. Log: " + (s.log || "GitHub → Actions"));
+    const list = [...(s.suggestions || [])];
+    if (clipTitle) list.push(clipTitle.toUpperCase().slice(0, 40));
+    if (!list.length) say($("sugmsg"), "Nikt nic nie powiedział w tym klipie, wpisz napis ręcznie.", "err");
+    else { showChips(list); say($("sugmsg"), "Kliknij propozycję, żeby ją wstawić.", "ok"); }
+  } catch (e) { say($("sugmsg"), e.message, "err"); }
+  $("suggest").disabled = false;
+});
+
+// ---------- kolejka ----------
+async function clipInfo(link) {
+  const mk = link.match(/kick\.com\/([A-Za-z0-9_\-]+)\/clips\/(clip_[A-Za-z0-9]+)/);
+  const mt = link.match(/(?:clips\.twitch\.tv\/(?:embed\?clip=)?|twitch\.tv\/([A-Za-z0-9_]+)\/clip\/)([A-Za-z0-9_\-]+)/);
+  if (mk) {
+    let title = "";
+    try {
+      const d = await (await fetch(`${PROXY}?url=${encodeURIComponent("https://kick.com/api/v2/clips/" + mk[2])}`)).json();
+      title = (d.clip || d).title || "";
+    } catch {}
+    return { url: `https://kick.com/${mk[1].toLowerCase()}/clips/${mk[2]}`, title };
+  }
+  if (mt) {
+    let title = "";
+    try { title = (await (await fetch(`${API}/twitchclip?slug=${encodeURIComponent(mt[2])}`)).json()).title || ""; } catch {}
+    return { url: mt[1] ? `https://www.twitch.tv/${mt[1]}/clip/${mt[2]}` : `https://clips.twitch.tv/${mt[2]}`, title };
+  }
+  return null;
+}
+
+$("qgo").addEventListener("click", async () => {
+  const key = keyVal();
+  if (!key) { alert("Wpisz hasło na górze strony."); return; }
+  const links = $("qlinks").value.split(/\s+/).map((x) => x.trim()).filter(Boolean);
+  if (!links.length) return;
+  if (!media() && !cam) return;
+  $("qgo").disabled = true; $("qlist").innerHTML = "";
+  const rows = links.map((l, i) => {
+    const d = document.createElement("div"); d.className = "job";
+    d.innerHTML = `<span class="t"></span><span class="s">…</span>`;
+    d.querySelector(".t").textContent = l.replace(/^https?:\/\//, "");
+    $("qlist").appendChild(d); return d;
+  });
+  const setRow = (i, text, cls = "", url = "") => {
+    const s = rows[i].querySelector(".s"); s.className = "s " + cls; s.textContent = text;
+    if (url) { const a = document.createElement("a"); a.href = url; a.textContent = "Pobierz"; a.download = "short.mp4"; rows[i].appendChild(a); }
+  };
+  const base = buildBody({ start: 0, end: 0 });
+  await Promise.all(links.map(async (l, i) => {
+    try {
+      const info = await clipInfo(l);
+      if (!info) throw new Error("zły link");
+      const caption = $("qtitle").checked ? (info.title || "").slice(0, 40).toUpperCase() : $("caption").value.trim();
+      setRow(i, "wysyłam…");
+      const j = await api("/api/short", key, "POST", { ...base, clip: info.url, caption });
+      const s = await waitFor(`/api/short/status?job=${j.job}`, key, (st, sec) => setRow(i, (st === "queued" ? "w kolejce " : "montaż ") + sec + " s"));
+      if (s.state === "success") setRow(i, "gotowe", "ok", s.url); else setRow(i, "błąd", "err");
+    } catch (e) { setRow(i, e.message, "err"); }
+  }));
+  $("qgo").disabled = false;
+});
+
+// ---------- historia ----------
+const DAYS = 14;
+async function loadHistory() {
+  const key = keyVal();
+  if (!key) { $("hlist").innerHTML = '<div class="hint">Wpisz hasło na górze strony.</div>'; return; }
+  try {
+    const { items } = await api("/api/shorts", key);
+    if (!items.length) { $("hlist").innerHTML = '<div class="hint">Jeszcze nic tu nie ma.</div>'; return; }
+    $("hlist").innerHTML = "";
+    for (const it of items) {
+      const age = (Date.now() - it.t) / 86400000;
+      const d = document.createElement("div"); d.className = "job";
+      const t = document.createElement("span"); t.className = "t";
+      t.textContent = (it.caption ? it.caption + " · " : "") + it.clip.replace(/^https?:\/\/(www\.)?/, "");
+      const s = document.createElement("span"); s.className = "s";
+      s.textContent = new Date(it.t).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      d.append(t, s);
+      if (it.state === "success" && age < DAYS) { const a = document.createElement("a"); a.href = it.url; a.textContent = "Pobierz"; a.download = "short.mp4"; d.append(a); }
+      else { const e = document.createElement("span"); e.className = "s " + (it.state === "failure" ? "err" : ""); e.textContent = it.state === "failure" ? "błąd" : it.state === "success" ? "wygasł" : "w toku"; d.append(e); }
+      $("hlist").appendChild(d);
+    }
+  } catch (e) { $("hlist").innerHTML = `<div class="msg err">${e.message}</div>`; }
+}
+$("hrefresh").addEventListener("click", loadHistory);
+if ($("pass").value) loadHistory();
 
 const q = new URLSearchParams(location.search).get("clip");
 if (q) { $("clip").value = q; loadClip(); }
