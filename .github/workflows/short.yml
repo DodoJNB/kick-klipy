@@ -21,6 +21,14 @@ on:
         description: "Wycinek gry x,y,w,h (puste = środek klatki)"
         required: false
         default: ""
+      nologo:
+        description: "1 = bez logo TSXNINE"
+        required: false
+        default: ""
+      cut:
+        description: "1 = wytnij ciszę (fragmenty, gdzie nikt nic nie mówi)"
+        required: false
+        default: ""
       job:
         description: "Numer zadania (wypełnia strona, ręcznie zostaw puste)"
         required: false
@@ -48,9 +56,14 @@ jobs:
           CAPTION: ${{ inputs.caption }}
           CAM: ${{ inputs.cam }}
           GAME: ${{ inputs.game }}
+          NOLOGO: ${{ inputs.nologo }}
+          CUT: ${{ inputs.cut }}
         run: |
+          EXTRA=""
+          [ "$NOLOGO" = "1" ] && EXTRA="$EXTRA --no-logo"
+          [ "$CUT" = "1" ] && EXTRA="$EXTRA --cut-silence"
           python3 shorts/short.py --clip "$CLIP" --caption "$CAPTION" \
-            --cam "$CAM" --game "$GAME" --out short.mp4
+            --cam "$CAM" --game "$GAME" $EXTRA --out short.mp4
 
       - name: Wynik do pobrania (zakładka Artifacts)
         uses: actions/upload-artifact@v4
