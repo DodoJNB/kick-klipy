@@ -50,7 +50,7 @@
   <p class="sub">Wklej link do klipu z Kicka, zaznacz kamerkę na podglądzie i kliknij przycisk. Gotowy film pobierzesz tutaj.</p>
 
   <div class="row">
-    <input type="text" id="clip" placeholder="https://kick.com/mamm0n/clips/clip_..." autocomplete="off" autocapitalize="off" spellcheck="false">
+    <input type="text" id="clip" placeholder="Link do klipu z Kicka lub Twitcha" autocomplete="off" autocapitalize="off" spellcheck="false">
     <button id="load" class="primary">Wczytaj</button>
   </div>
   <div class="msg" id="loadmsg"></div>
@@ -283,18 +283,33 @@ function useThumbnail(url, why) {
 }
 
 async function loadClip() {
-  const m = $("clip").value.match(/kick\.com\/([A-Za-z0-9_\-]+)\/clips\/(clip_[A-Za-z0-9]+)/);
-  if (!m) { say($("loadmsg"), "Wklej pełny link do klipu, np. https://kick.com/mamm0n/clips/clip_...", "err"); return; }
-  channel = m[1].toLowerCase(); clipUrl = `https://kick.com/${channel}/clips/${m[2]}`;
+  const val = $("clip").value.trim();
+  const mk = val.match(/kick\.com\/([A-Za-z0-9_\-]+)\/clips\/(clip_[A-Za-z0-9]+)/);
+  const mt = val.match(/(?:clips\.twitch\.tv\/(?:embed\?clip=)?|twitch\.tv\/([A-Za-z0-9_]+)\/clip\/)([A-Za-z0-9_\-]+)/);
+  if (!mk && !mt) { say($("loadmsg"), "Wklej pełny link do klipu z Kicka albo Twitcha.", "err"); return; }
   say($("loadmsg"), "Wczytuję klip…");
   $("load").disabled = true;
+  let twitch = false;
   try {
-    const api = `https://kick.com/api/v2/clips/${m[2]}`;
-    const res = await fetch(`${PROXY}?url=${encodeURIComponent(api)}`);
-    if (!res.ok) throw new Error("Kick zwrócił błąd " + res.status);
-    const d = await res.json(); const c = d.clip || d;
-    const src = c.video_url || c.clip_url, thumb = c.thumbnail_url;
-    if (!src) throw new Error("Brak adresu wideo w odpowiedzi Kicka.");
+    let src, thumb, title = "";
+    if (mk) {
+      channel = mk[1].toLowerCase(); clipUrl = `https://kick.com/${channel}/clips/${mk[2]}`;
+      const api = `https://kick.com/api/v2/clips/${mk[2]}`;
+      const res = await fetch(`${PROXY}?url=${encodeURIComponent(api)}`);
+      if (!res.ok) throw new Error("Kick zwrócił błąd " + res.status);
+      const d = await res.json(); const c = d.clip || d;
+      src = c.video_url || c.clip_url; thumb = c.thumbnail_url; title = c.title || "";
+      if (!src) throw new Error("Brak adresu wideo w odpowiedzi Kicka.");
+    } else {
+      twitch = true;
+      const res = await fetch(`${API}/twitchclip?slug=${encodeURIComponent(mt[2])}`);
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Twitch zwrócił błąd " + res.status);
+      src = d.video; thumb = d.thumbnail; title = d.title || "";
+      channel = ("tw_" + (mt[1] || d.channel || "twitch")).toLowerCase();
+      clipUrl = mt[1] ? `https://www.twitch.tv/${mt[1]}/clip/${mt[2]}` : `https://clips.twitch.tv/${mt[2]}`;
+    }
+    const c = { title };
 
     const saved = store.get("cam:" + channel);
     if (saved) { try { cam = JSON.parse(saved); } catch {} } else cam = { x: 0, y: 0, w: 0.26 };
@@ -307,13 +322,16 @@ async function loadClip() {
     if (imgEl) { imgEl.remove(); imgEl = null; }
     thumbImg = null;
     if (thumb) { thumbImg = new Image(); thumbImg.src = thumb; }
-    const proxied = `${API}/hls?u=${encodeURIComponent(src)}`;
+    const proxied = twitch ? src : `${API}/hls?u=${encodeURIComponent(src)}`;
     let failed = false;
     const fail = (why) => { if (failed) return; failed = true; if (thumb) useThumbnail(thumb, why); else say($("loadmsg"), why, "err"); };
     const timer = setTimeout(() => { if (!media() || mediaKind !== "video") fail("Podgląd wideo nie wczytał się, pokazuję miniaturę klipu."); }, 12000);
     vid.addEventListener("loadeddata", () => { clearTimeout(timer); say($("loadmsg"), "Klip wczytany.", "ok"); }, { once: true });
 
-    if (window.Hls && Hls.isSupported()) {
+    if (twitch) {
+      vid.src = proxied;
+      vid.addEventListener("error", () => fail("Nie mogę odtworzyć klipu, pokazuję miniaturę."), { once: true });
+    } else if (window.Hls && Hls.isSupported()) {
       hls = new Hls();
       hls.on(Hls.Events.ERROR, (_, e) => { if (e.fatal) fail("Nie mogę odtworzyć klipu (" + (e.details || "błąd") + "), pokazuję miniaturę."); });
       hls.loadSource(proxied); hls.attachMedia(vid);
