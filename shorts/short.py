@@ -30,6 +30,7 @@ W, H = 1080, 1920
 CAM_H = 773                 # wysokość sekcji z kamerką
 GAME_Y, GAME_H = 773, 792   # sekcja z grą: y 773..1565
 BOX_X0, BOX_X1 = 54, 1025   # maks. szerokość czerwonego paska
+NOCAM_Y, NOCAM_H = 250, 1315  # bez kamerki: gra w pasie y 250..1565, nad i pod rozmyte tło
 BOX_CY_NOCAM = 360          # pasek w trybie bez kamerki (wyżej)
 BOX_CY = 740                # środek paska (lekko nad stykiem kamery i gry)
 LOGO_CX, LOGO_CY = 565, 1565  # środek logo: na dolnej krawędzi gry
@@ -562,7 +563,7 @@ def main():
         gx, gy, gw, gh = [float(v) for v in a.game.split(",")]
     else:  # pełna wysokość, środek klatki, proporcje sekcji gry
         gh, gy = 1.0, 0.0
-        gw = min(((W / H) if a.no_cam else (W / GAME_H)) * sh / sw, 1.0)
+        gw = min(((W / NOCAM_H) if a.no_cam else (W / GAME_H)) * sh / sw, 1.0)
         gx = (1 - gw) / 2
 
     tmp = tempfile.mkdtemp()
@@ -631,9 +632,13 @@ def main():
     subs = f",ass='{ass_path}'" if words else ""
     if a.no_cam:
         fc = head + (
-            f"{vin}crop=trunc(iw*{gw}):trunc(ih*{gh}):trunc(iw*{gx}):trunc(ih*{gy}),"
-            f"scale={W}:{H},setsar=1[g];"
-            f"[g][1:v]overlay=0:0:shortest=1{subs},format=yuv420p[v]"
+            f"{vin}split=2[a][c];"
+            "[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,"
+            f"gblur=sigma=9,scale={W}:{H}:flags=bicubic,setsar=1[bg];"
+            f"[c]crop=trunc(iw*{gw}):trunc(ih*{gh}):trunc(iw*{gx}):trunc(ih*{gy}),"
+            f"scale={W}:{NOCAM_H},setsar=1[game];"
+            f"[bg][game]overlay=0:{NOCAM_Y}[t2];"
+            f"[t2][1:v]overlay=0:0:shortest=1{subs},format=yuv420p[v]"
         )
     else:
         fc = head + (
