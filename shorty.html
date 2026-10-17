@@ -77,6 +77,7 @@
         <input type="text" id="caption" maxlength="80" placeholder="np. POŻAR W CHACIE" autocomplete="off">
         <label for="gamepos">Które miejsce gry pokazać (lewo ⟷ prawo)</label>
         <input type="range" class="range" id="gamepos" min="0" max="100" value="50">
+        <label class="chk"><input type="checkbox" id="nocam"> Bez kamerki (sama gra na cały ekran)</label>
         <label class="chk"><input type="checkbox" id="logoon" checked> Logo TSXNINE</label>
         <label class="chk"><input type="checkbox" id="cut"> Wytnij ciszę (gdy nikt nic nie mówi)</label>
       </div>
@@ -111,7 +112,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMoAAAA4CAYAAAC8
 
 // układ shorta (taki sam jak w short.py)
 const W = 1080, H = 1920, CAM_H = 773, GAME_Y = 773, GAME_H = 792;
-const BOX_X0 = 54, BOX_X1 = 1025, BOX_CY = 740, LOGO_CX = 565, LOGO_CY = 1565;
+const BOX_X0 = 54, BOX_X1 = 1025, BOX_CY = 740, BOX_CY_NOCAM = 360, LOGO_CX = 565, LOGO_CY = 1565;
 const CAMAR = W / CAM_H;
 
 const $ = (id) => document.getElementById(id);
@@ -189,13 +190,20 @@ function draw() {
   ctx.drawImage(small, -40, -70, W + 80, H + 140);
   ctx.restore();
 
-  // kamerka
-  ctx.drawImage(m.el, cam.x * vw, cam.y * vh, cam.w * vw, camH() * vh, 0, 0, W, CAM_H);
+  const noCam = $("nocam").checked;
+  if (noCam) {
+    // bez kamerki: sama gra na cały ekran 9:16
+    const gw0 = Math.min(1, (W / H) * vh / vw);
+    ctx.drawImage(m.el, (1 - gw0) * (Number($("gamepos").value) / 100) * vw, 0, gw0 * vw, vh, 0, 0, W, H);
+  } else {
+    // kamerka
+    ctx.drawImage(m.el, cam.x * vw, cam.y * vh, cam.w * vw, camH() * vh, 0, 0, W, CAM_H);
 
-  // gra: pełna wysokość, wycinek o proporcjach sekcji
-  const gw = Math.min(1, (W / GAME_H) * vh / vw);
-  const gx = (1 - gw) * (Number($("gamepos").value) / 100);
-  ctx.drawImage(m.el, gx * vw, 0, gw * vw, vh, 0, GAME_Y, W, GAME_H);
+    // gra: pełna wysokość, wycinek o proporcjach sekcji
+    const gw = Math.min(1, (W / GAME_H) * vh / vw);
+    const gx = (1 - gw) * (Number($("gamepos").value) / 100);
+    ctx.drawImage(m.el, gx * vw, 0, gw * vw, vh, 0, GAME_Y, W, GAME_H);
+  }
 
   // czerwony pasek z napisem
   const text = $("caption").value.trim().toUpperCase();
@@ -206,7 +214,7 @@ function draw() {
     const tw = Math.max(...f.lines.map((l) => f.width(l, f.size)));
     const bw = Math.min(tw + 60, BOX_X1 - BOX_X0);
     const bh = Math.max(132, lh * f.lines.length + 24);
-    const cx = (BOX_X0 + BOX_X1) / 2, x0 = cx - bw / 2, y0 = BOX_CY - bh / 2;
+    const cx = (BOX_X0 + BOX_X1) / 2, x0 = cx - bw / 2, y0 = (noCam ? BOX_CY_NOCAM : BOX_CY) - bh / 2;
     ctx.fillStyle = "#e21212"; ctx.fillRect(x0, y0, bw, bh);
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.lineJoin = "round"; ctx.lineWidth = 10; ctx.strokeStyle = "#000"; ctx.fillStyle = "#fff";
@@ -349,6 +357,7 @@ async function loadClip() {
 }
 $("load").addEventListener("click", loadClip);
 $("logoon").addEventListener("change", () => draw());
+$("nocam").addEventListener("change", () => { $("box").style.display = $("nocam").checked ? "none" : ""; draw(); });
 $("clip").addEventListener("keydown", (e) => { if (e.key === "Enter") loadClip(); });
 
 // ---------- robienie shorta ----------
@@ -361,13 +370,14 @@ $("make").addEventListener("click", async () => {
   store.set("sn_key", key); saveCam();
   $("make").disabled = true; $("result").innerHTML = ""; $("bar").hidden = false;
   say($("msg"), "Wysyłam zlecenie…");
-  const gw = Math.min(1, (W / GAME_H) * (1 / aspect()));
+  const gw = Math.min(1, ($("nocam").checked ? W / H : W / GAME_H) * (1 / aspect()));
   const gx = (1 - gw) * (Number($("gamepos").value) / 100);
   const body = {
     clip: clipUrl, caption: $("caption").value.trim(),
     cam: [cam.x, cam.y, cam.w, camH()].map((n) => n.toFixed(4)).join(","),
     game: [gx, 0, gw, 1].map((n) => n.toFixed(4)).join(","),
     nologo: !$("logoon").checked,
+    nocam: $("nocam").checked,
     cut: $("cut").checked,
   };
   try {
